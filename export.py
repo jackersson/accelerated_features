@@ -101,10 +101,32 @@ def parse_args():
         help="Path to export ONNX model.",
     )
     parser.add_argument(
+        "--xfeat_only_lighterglue",
+        action="store_true",
+        help="Export only the XFeat Lighterglue addon matching model.",
+    )
+    parser.add_argument(
+        "--lightgluev2",
+        action="store_true",
+        help="Use LighterGlueV2 model",
+    )
+    parser.add_argument(
+        "--rknn",
+        action="store_true",
+        help="Use RKNN model",
+    )
+    parser.add_argument(
         "--opset",
         type=int,
         default=11,
         help="ONNX opset version.",
+    )
+    
+    parser.add_argument(
+        "--weights",
+        type=str,
+        default="xfeat-lighterglue.pt",
+        help="Weights",
     )
 
     return parser.parse_args()
@@ -120,7 +142,7 @@ if __name__ == "__main__":
     if args.top_k > 4800:
         print("Warning: The current maximum supported value for TopK in TensorRT is 3840, which coincidentally equals 4800 * 0.8. Please ignore this warning if TensorRT will not be used in the future.")
 
-    batch_size = 2
+    batch_size = 1
     x1 = torch.randn(batch_size, 3, args.height, args.width, dtype=torch.float32, device='cpu')
     x2 = torch.randn(batch_size, 3, args.height, args.width, dtype=torch.float32, device='cpu')
 
@@ -150,7 +172,8 @@ if __name__ == "__main__":
             output_names=["feats", "keypoints", "heatmaps"],
             dynamic_axes=dynamic_axes if args.dynamic else None,
         )
-    if args.xfeat_only_model_detectAndCompute:
+        
+    elif args.xfeat_only_model_detectAndCompute:
         print("Warning: Exporting the detectAndCompute ONNX model only supports a batch size of 1.")
         batch_size = 1
         xfeat.forward = xfeat.detectAndCompute
@@ -210,6 +233,51 @@ if __name__ == "__main__":
             output_names=["matches", "batch_indexes"],
             dynamic_axes=dynamic_axes if args.dynamic else None,
         )
+    elif args.xfeat_only_lighterglue:
+      
+        mkpts0 = torch.randn(1, args.top_k, 2, dtype=torch.float32, device='cpu')
+        mkpts1 = torch.randn(1, args.top_k, 2, dtype=torch.float32, device='cpu')
+        feats0 = torch.randn(1, args.top_k, 64, dtype=torch.float32, device='cpu')
+        feats1 = torch.randn(1, args.top_k, 64, dtype=torch.float32, device='cpu')
+        
+        outputs = ["matches", "scores"]
+        if args.rknn:
+            outputs = ["scores"]
+        
+        if args.lightgluev2:
+            from modules.lightglueonnxv2 import LighterGlue
+            lighterglue = LighterGlue(weights=args.weights, rknn=args.rknn)
+            
+            mkpts = torch.cat([mkpts0, mkpts1], dim=0)
+            feats = torch.cat([feats0, feats1], dim=0)
+            
+            lighterglue = lighterglue.eval().cpu()
+            
+            torch.onnx.export(
+                lighterglue,
+                (mkpts, feats),
+                args.export_path,
+                verbose=False,
+                opset_version=args.opset,
+                do_constant_folding=True,
+                input_names=["kpts", "desc"],
+                output_names=outputs,
+            )
+            
+        else:
+            from modules.lighterglueonnx import LighterGlueONNX
+            lighterglue = LighterGlueONNX(rknn=args.rknn)
+            
+            torch.onnx.export(
+                lighterglue,
+                (mkpts0, feats0, mkpts1, feats1),
+                args.export_path,
+                verbose=False,
+                opset_version=args.opset,
+                do_constant_folding=True,
+                input_names=["kpts0", "desc0", "kpts1", "desc1"],
+                output_names=outputs,
+            )
     else:
         xfeat.forward = xfeat.match_xfeat_star
         dynamic_axes = {"images0": {0: "batch", 2: "height", 3: "width"}, "images1": {0: "batch", 2: "height", 3: "width"}}
