@@ -218,9 +218,9 @@ class LighterGlueONNX(nn.Module):
         "rknn": False
     }
 
-    def __init__(self) -> None:
+    def __init__(self, **conf) -> None:
         super().__init__()
-        self.conf = {**self.default_conf}
+        self.conf = {**self.default_conf, **conf}
         self.conf = conf = SimpleNamespace(**self.conf)
 
         if conf.input_dim != conf.descriptor_dim:

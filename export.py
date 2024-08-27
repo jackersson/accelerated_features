@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 import onnx
 import onnxsim
+from pathlib import Path
 
 from modules.xfeat import XFeat
 
@@ -142,6 +143,8 @@ if __name__ == "__main__":
     if args.top_k > 4800:
         print("Warning: The current maximum supported value for TopK in TensorRT is 3840, which coincidentally equals 4800 * 0.8. Please ignore this warning if TensorRT will not be used in the future.")
 
+    Path(args.export_path).parent.mkdir(parents=True, exist_ok=True)
+
     batch_size = 1
     x1 = torch.randn(batch_size, 3, args.height, args.width, dtype=torch.float32, device='cpu')
     x2 = torch.randn(batch_size, 3, args.height, args.width, dtype=torch.float32, device='cpu')
@@ -172,7 +175,6 @@ if __name__ == "__main__":
             output_names=["feats", "keypoints", "heatmaps"],
             dynamic_axes=dynamic_axes if args.dynamic else None,
         )
-        
     elif args.xfeat_only_model_detectAndCompute:
         print("Warning: Exporting the detectAndCompute ONNX model only supports a batch size of 1.")
         batch_size = 1
